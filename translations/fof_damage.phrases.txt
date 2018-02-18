@@ -1,0 +1,45 @@
+"Phrases"
+{
+	"ChatPrefix"
+	{
+		"en"		"[SM] [Damage] "
+	}
+	"CommandReplyTakeDamage"
+	{
+		"en"		"Usage: %s <name|#userid> <multiplier>\nSet the take damage multiplier of user(s) to a certain factor."
+	}
+	"CommandReplyMakeDamage"
+	{
+		"en"		"Usage: %s <name|#userid> <multiplier>\nSet the multiplier for damage points inflicted to others of user(s) to a certain factor."
+	}
+	"CommandReplyTakeDamageSet"
+	{
+		"en"		"Take damage multiplier of '%s' successfully set to %f."
+		"de"		"Schadens-Multiplikator für '%s' wurde erfolgreich auf %f gesetzt."
+	}
+	"CommandReplyMakeDamageSet"
+	{
+		"en"		"Make damage multiplier of '%s' successfully set to %f."
+		"de"		"Angriffs-Multiplikator für '%s' wurde erfolgreich auf %f gesetzt."
+	}
+	"CVarMessageEnabled"
+	{
+		"en"		"Damage modification enabled."
+		"de"		"Schadens- und Angriffs-Multiplikator aktiviert."
+	}
+	"CVarMessageDisabled"
+	{
+		"en"		"Damage modification disabled."
+		"de"		"Schadens- und Angriffs-Multiplikator deaktiviert."
+	}
+	"ConfigReloaded"
+	{
+		"en"		"Config successfully reloaded."
+		"de"		"Konfiguration erfolgreich neu geladen."
+	}
+	"ConfigReloadFailed"
+	{
+		"en"		"Configuration file parsing failed! (%s)"
+		"de"		"Fehler in Konfigurationsdatei! (%s)"
+	}
+}
