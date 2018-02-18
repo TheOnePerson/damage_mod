@@ -47,7 +47,7 @@
 #include <adt_trie>
 
 #define PLUGIN_NAME 		"FoF Damage Modification"
-#define PLUGIN_VERSION 		"0.1.0"
+#define PLUGIN_VERSION 		"0.1.1"
 #define PLUGIN_AUTHOR 		"almostagreatcoder"
 #define PLUGIN_DESCRIPTION 	"Enables modification of damage points for players"
 #define PLUGIN_URL 			"https://forums.alliedmods.net/showthread.php?t=??????"
@@ -185,6 +185,7 @@ public void OnClientPostAdminCheck(client) {
 public void OnClientDisconnect(client) {
 	if (client <= MaxClients) {
 		ResetPlayer(client);
+		SDKUnhook(client, SDKHook_OnTakeDamage, OnPlayerTakeDamage);
 	}
 }
 
@@ -219,26 +220,6 @@ public Action OnPlayerTakeDamage(victimId, &attackerId, &inflictorId, &Float:dam
 			PrintToServer("%s*** OnPlayerTakeDamage *** / userid=%d, attackerid=%d, damage_org=%f, damage_new=%d", PLUGIN_LOGPREFIX, victimId, attackerId, damage, RoundFloat(newdamage));
 #endif
 			damage = newdamage;
-			return Plugin_Changed;
-		} else 
-			return Plugin_Continue;
-	} else
-		return Plugin_Continue;
-}
-
-public Action Event_PlayerHurt(Event event, const String:name[], bool:dontBroadcast) {
-	if (g_Enabled) {
-		new victimId = GetClientOfUserId(event.GetInt("userid"));
-		new attackerId = GetClientOfUserId(event.GetInt("attacker"));
-		new Float:newdamage = float(event.GetInt("damage"));
-		newdamage = newdamage * g_PlayerTakeDamageMultiplier[victimId];
-		newdamage = newdamage * g_PlayerMakeDamageMultiplier[attackerId];
-		if (event.GetInt("damage") != RoundFloat(newdamage)) {
-#if defined DEBUG
-		
-			PrintToServer("%s*** Event_PlayerHurt *** / userid=%d, attackerid=%d, damage_org=%d, damage_new=%d", PLUGIN_LOGPREFIX, victimId, attackerId, event.GetInt("damage"), RoundFloat(newdamage));
-#endif
-			event.SetInt("damage", RoundFloat(newdamage));
 			return Plugin_Changed;
 		} else 
 			return Plugin_Continue;
