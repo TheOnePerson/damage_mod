@@ -1,5 +1,5 @@
 /*
-	Fistful of Frags Take Damage Modification
+	- Damage Modification -
 	Written by almostagreatcoder (almostagreatcoder@web.de)
 
 	Licensed under the GPLv3
@@ -19,7 +19,7 @@
 	
 	****
 
-	Make sure that fof_takedamage.cfg is in your sourcemod/configs/ directory.
+	Make sure that damage_mod.cfg is in your sourcemod/configs/ directory.
 	You can set default damage reduction (or increasement) for players there.
 
 	CVars:
@@ -46,15 +46,15 @@
 #include <clientprefs>
 #include <adt_trie>
 
-#define PLUGIN_NAME 		"FoF Damage Modification"
-#define PLUGIN_VERSION 		"0.1.1"
+#define PLUGIN_NAME 		"Damage Modification"
+#define PLUGIN_VERSION 		"0.1.2"
 #define PLUGIN_AUTHOR 		"almostagreatcoder"
 #define PLUGIN_DESCRIPTION 	"Enables modification of damage points for players"
-#define PLUGIN_URL 			"https://forums.alliedmods.net/showthread.php?t=??????"
+#define PLUGIN_URL 			"https://forums.alliedmods.net/showthread.php?t=305408"
 
-#define CONFIG_FILENAME 	"fof_damage.cfg"
+#define CONFIG_FILENAME 	"damage_mod.cfg"
 #define MAX_PLAYERCONFIGS 100
-#define TRANSLATIONS_FILENAME "fof_damage.phrases"
+#define TRANSLATIONS_FILENAME "damage_mod.phrases"
 #define CHAT_COLORTAG1 		"\x0794D8E9"
 #define CHAT_COLORTAG_NORM 	"\x01"
 
@@ -99,6 +99,8 @@ new Float:g_currentPlayerConfigMakeDamage;
 new String:g_currentPlayerConfigSteamID[STEAMID_LENGTH];
 
 new bool:g_Enabled = true;
+new Float:g_defaultTakeDamage;
+new Float:g_defaultMakeDamage;
 
 //
 // Handlers for public events
@@ -114,11 +116,14 @@ public OnPluginStart() {
 	g_ConfigPlayerTakeDamage = CreateArray(sizeof(g_currentPlayerConfigTakeDamage));
 	g_ConfigPlayerMakeDamage = CreateArray(sizeof(g_currentPlayerConfigMakeDamage));
 	
-	CreateConVar(CVAR_VERSION, PLUGIN_VERSION, "FoF Damage Modification version", FCVAR_NOTIFY | FCVAR_REPLICATED | FCVAR_DONTRECORD | FCVAR_SPONLY);
-	g_CvarEnabled = CreateConVar(CVAR_ENABLED, "1", "1 enables the FoF Damage Modification plugin, 0 disables it.", FCVAR_NONE, true, 0.0, true, 1.0);
+	CreateConVar(CVAR_VERSION, PLUGIN_VERSION, "Damage Modification version", FCVAR_NOTIFY | FCVAR_REPLICATED | FCVAR_DONTRECORD | FCVAR_SPONLY);
+	g_CvarEnabled = CreateConVar(CVAR_ENABLED, "1", "1 enables the Damage Modification plugin, 0 disables it.", FCVAR_NONE, true, 0.0, true, 1.0);
 	
-	RegAdminCmd(COMMAND_TAKEDAMAGE, PlayerCommandHandler, ADMFLAG_CUSTOM1, "FoF Damage Modification: modify the damage points a player takes");
-	RegAdminCmd(COMMAND_MAKEDAMAGE, PlayerCommandHandler, ADMFLAG_CUSTOM1, "FoF Damage Modification: modify the damage points a player inflicts to others");
+	RegAdminCmd(COMMAND_TAKEDAMAGE, PlayerCommandHandler, ADMFLAG_CUSTOM1, "Damage Modification: modify the damage points a player takes");
+	RegAdminCmd(COMMAND_MAKEDAMAGE, PlayerCommandHandler, ADMFLAG_CUSTOM1, "Damage Modification: modify the damage points a player inflicts to others");
+	
+	g_defaultTakeDamage = 1.0;
+	g_defaultMakeDamage = 1.0;
 	
 	// Hook cvar changes
 	HookConVarChange(g_CvarEnabled, CVar_EnabledChanged);
@@ -126,7 +131,6 @@ public OnPluginStart() {
 	
 	// Hook events
 	HookEvent( "player_activate", Event_PlayerActivate);
-	//HookEvent("player_hurt", Event_PlayerHurt, EventHookMode_Pre);
 
 }
 
@@ -265,9 +269,9 @@ public SMCResult:Config_NewSection(Handle:parser, const String:name[], bool:quot
 			PrintToServer("%s%s", PLUGIN_LOGPREFIX, g_LastError);
 #endif
 		} else {
-			// store details for current section (are processed again at end of section)
-			g_currentPlayerConfigTakeDamage = 1.0;
-			g_currentPlayerConfigMakeDamage = 1.0;
+			// store default for current section (are processed again at end of section)
+			g_currentPlayerConfigTakeDamage = g_defaultTakeDamage;
+			g_currentPlayerConfigMakeDamage = g_defaultMakeDamage;
 			g_currentPlayerConfigSteamID = "";
 		}
 	}	// (ignore any other section nesting level...)
@@ -276,14 +280,26 @@ public SMCResult:Config_NewSection(Handle:parser, const String:name[], bool:quot
 
 public SMCResult:Config_KeyValue(Handle:parser, const String:key[], const String:value[], bool:key_quotes, bool:value_quotes) {
 	new SMCResult:result = SMCParse_Continue;
-	if (g_SectionDepth == 2) {
+	if (2 <= g_SectionDepth <= 3) {
 		// Level 2 = player values
 		if (strcmp(key, "TakeDamage", false) == 0) {
-			g_currentPlayerConfigTakeDamage = StringToFloat(value);
+			if (g_SectionDepth == 2)
+				g_currentPlayerConfigTakeDamage = StringToFloat(value);
+			else
+				g_defaultTakeDamage = StringToFloat(value);
 		} else if (strcmp(key, "MakeDamage", false) == 0) {
-			g_currentPlayerConfigMakeDamage = StringToFloat(value);
+			if (g_SectionDepth == 2)
+				g_currentPlayerConfigMakeDamage = StringToFloat(value);
+			else
+				g_defaultMakeDamage = StringToFloat(value);
 		} else if (strcmp(key, "SteamID", false) == 0) {
-			strcopy(g_currentPlayerConfigSteamID, sizeof(g_currentPlayerConfigSteamID), value);
+			if (strcmp(value, "Default", false) == 0) {
+				// Default values set
+				g_SectionDepth = 3;
+			} else {
+				g_SectionDepth = 2;
+				strcopy(g_currentPlayerConfigSteamID, sizeof(g_currentPlayerConfigSteamID), value);
+			}
 		}
 	}
 	return result;
@@ -298,6 +314,8 @@ public SMCResult:Config_EndSection(Handle:parser) {
 		PushArrayCell(g_ConfigPlayerMakeDamage, g_currentPlayerConfigMakeDamage);
 	}
 	g_SectionDepth--;
+	if (g_SectionDepth == 2) 
+		g_SectionDepth--;
 	return result;
 }
 
