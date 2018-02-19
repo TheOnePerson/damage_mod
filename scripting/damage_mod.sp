@@ -407,8 +407,8 @@ public Action:PlayerCommandHandler(client, args) {
 GetFactorsToSteamID(const String:steamID[], Float:damageFactors[]) {
 	new String:thisSteamID[STEAMID_LENGTH];
 	new max = GetArraySize(g_ConfigPlayerSteamID);
-	damageFactors[0] = 1.0;
-	damageFactors[1] = 1.0;
+	damageFactors[0] = g_defaultTakeDamage;
+	damageFactors[1] = g_defaultMakeDamage;
 	for (new i = 0; i < max; i++) {
 		GetArrayString(g_ConfigPlayerSteamID, i, thisSteamID, sizeof(thisSteamID));
 		if ((strcmp(thisSteamID, steamID, false) == 0)) {
@@ -441,11 +441,11 @@ void ResetPlayer(const client) {
 	if (client == 0) {
 		decl i;
 		for (i = 0; i < sizeof(g_PlayerMakeDamageMultiplier); i++) {
-			g_PlayerMakeDamageMultiplier[i] = 1.0;
-			g_PlayerTakeDamageMultiplier[i] = 1.0;
+			g_PlayerMakeDamageMultiplier[i] = g_defaultMakeDamage;
+			g_PlayerTakeDamageMultiplier[i] = g_defaultTakeDamage;
 		}
 	} else if (client >= 0 && client < sizeof(g_PlayerMakeDamageMultiplier)) {
-		g_PlayerMakeDamageMultiplier[client] = 1.0;
-		g_PlayerTakeDamageMultiplier[client] = 1.0;
+		g_PlayerMakeDamageMultiplier[client] = g_defaultMakeDamage;
+		g_PlayerTakeDamageMultiplier[client] = g_defaultTakeDamage;
 	}
 }
