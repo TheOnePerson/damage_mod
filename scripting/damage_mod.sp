@@ -28,6 +28,7 @@
 	Commands:
 		sm_takedamage		// modify the receiving damage factor for any target
 		sm_makedamage		// modify the inflicting damage factor for any target
+		sm_damage_status	// display the damage factors for each player
 
 */
 
@@ -47,7 +48,7 @@
 #include <adt_trie>
 
 #define PLUGIN_NAME 		"Damage Modification"
-#define PLUGIN_VERSION 		"0.1.2"
+#define PLUGIN_VERSION 		"0.2.0"
 #define PLUGIN_AUTHOR 		"almostagreatcoder"
 #define PLUGIN_DESCRIPTION 	"Enables modification of damage points for players"
 #define PLUGIN_URL 			"https://forums.alliedmods.net/showthread.php?t=305408"
@@ -63,7 +64,10 @@
 #define STEAMID_LENGTH 25
 
 #define COMMAND_TAKEDAMAGE "sm_takedamage"
+#define COMMANDTYPE_TAKEDAMAGE 0
 #define COMMAND_MAKEDAMAGE "sm_makedamage"
+#define COMMANDTYPE_MAKEDAMAGE 1
+#define COMMAND_SHOWDAMAGE "sm_damage_status"
 
 #define CVAR_VERSION "sm_damage_version"
 #define CVAR_ENABLED "sm_damage_enabled"
@@ -119,8 +123,9 @@ public OnPluginStart() {
 	CreateConVar(CVAR_VERSION, PLUGIN_VERSION, "Damage Modification version", FCVAR_NOTIFY | FCVAR_REPLICATED | FCVAR_DONTRECORD | FCVAR_SPONLY);
 	g_CvarEnabled = CreateConVar(CVAR_ENABLED, "1", "1 enables the Damage Modification plugin, 0 disables it.", FCVAR_NONE, true, 0.0, true, 1.0);
 	
-	RegAdminCmd(COMMAND_TAKEDAMAGE, PlayerCommandHandler, ADMFLAG_CUSTOM1, "Damage Modification: modify the damage points a player takes");
-	RegAdminCmd(COMMAND_MAKEDAMAGE, PlayerCommandHandler, ADMFLAG_CUSTOM1, "Damage Modification: modify the damage points a player inflicts to others");
+	RegAdminCmd(COMMAND_TAKEDAMAGE, PlayerCommandHandler, ADMFLAG_SLAY, "Damage Modification: modify the damage points a player takes");
+	RegAdminCmd(COMMAND_MAKEDAMAGE, PlayerCommandHandler, ADMFLAG_SLAY, "Damage Modification: modify the damage points a player inflicts to others");
+	RegConsoleCmd(COMMAND_SHOWDAMAGE, StatusCommandHandler, "Damage Modification: List damage multipliers of all players");
 	
 	g_defaultTakeDamage = 1.0;
 	g_defaultMakeDamage = 1.0;
@@ -171,11 +176,12 @@ public void OnClientPostAdminCheck(client) {
 	if (client <= MaxClients && !IsFakeClient(client)) {
 		ResetPlayer(client);
 		decl String:steamID[STEAMID_LENGTH];
-		new Float:damageFactors[2];
+		float takeDamageFactor;
+		float makeDamageFactor;
 		GetClientAuthId(client, AuthId_Steam2, steamID, sizeof(steamID));
-		GetFactorsToSteamID(steamID, damageFactors); 
-		g_PlayerTakeDamageMultiplier[client] = damageFactors[0];
-		g_PlayerMakeDamageMultiplier[client] = damageFactors[1];
+		GetFactorsToSteamID(steamID, takeDamageFactor, makeDamageFactor); 
+		g_PlayerTakeDamageMultiplier[client] = takeDamageFactor;
+		g_PlayerMakeDamageMultiplier[client] = makeDamageFactor;
 		SDKHook(client, SDKHook_OnTakeDamage, OnPlayerTakeDamage);
 #if defined DEBUG
 		PrintToServer("%sConnecting client id %d: take_damage:%f, make_damage: %f", PLUGIN_LOGPREFIX, client, g_PlayerTakeDamageMultiplier[client], g_PlayerMakeDamageMultiplier[client]); // DEBUG
@@ -229,6 +235,68 @@ public Action OnPlayerTakeDamage(victimId, &attackerId, &inflictorId, &Float:dam
 			return Plugin_Continue;
 	} else
 		return Plugin_Continue;
+}
+
+/**
+ * Handler for 'sm_damage_status' command. Lists all player's damage factors. 
+ * 
+ * @param client 	client id
+ * @args			Arguments given for the command
+ *
+ */
+public Action:StatusCommandHandler(client, args) {
+	decl String:playerName[MAX_NAME_LENGTH];
+	decl String:output[160 * (MAXPLAYERS + 4)];
+	decl String:line[160];
+	// show some stuff about the plugin
+	Format(output, sizeof(output), "\r\n%s (%s) Status Information\r\n", PLUGIN_NAME, PLUGIN_VERSION);
+	if (g_Enabled)
+		playerName = "enabled";
+	else
+		playerName = "disabled";
+	Format(line, sizeof(line), "Status: Plugin %s\r\n", playerName);
+	StrCat(output, sizeof(output), line);
+	StrCat(output, sizeof(output), "Player's damage factors:\r\n");
+	new maxNameLen = 0;
+	new Handle:aryClients = CreateArray();
+	// collect connected players and determine max name length
+	decl len;
+	for (new i = 1; i <= MaxClients; i++) {
+		if (IsClientConnected(i)) {
+			GetClientName(i, playerName, sizeof(playerName));
+			PushArrayCell(aryClients, i);
+			len = StrLenMB(playerName);
+			if (len > maxNameLen)
+				maxNameLen = len;
+		}
+	}
+	// show player's damage factors as a table
+	decl String:padStr[MAX_NAME_LENGTH + 3];
+	for (new i = 0; i < MAX_NAME_LENGTH + 3; i++)
+		padStr[i] = ' ';
+	len = maxNameLen + 3 - strlen("name");
+	if (len < 0)
+		len = 1;
+	padStr[len] = '\0';
+	Format(line, sizeof(line), "# userid  name %s  make damage  take damage\r\n", padStr);
+	StrCat(output, sizeof(output), line);
+	padStr[len] = ' ';
+	new y = GetArraySize(aryClients);
+	decl userid;
+	decl thisClient;
+	for (new i = 0; i < y; i++) {
+		thisClient = GetArrayCell(aryClients, i);
+		if (thisClient > 0) {
+			GetClientName(thisClient, playerName, sizeof(playerName));
+			userid = GetClientUserId(thisClient);
+			padStr[maxNameLen + 1 - StrLenMB(playerName)] = '\0';
+			Format(line, sizeof(line), "#%7d  '%s'%s   %11.4f  %11.4f\r\n", userid, playerName, padStr, g_PlayerMakeDamageMultiplier[thisClient], g_PlayerTakeDamageMultiplier[thisClient]);
+			StrCat(output, sizeof(output), line);
+			padStr[maxNameLen + 1 - StrLenMB(playerName)] = ' ';
+		}
+	}
+	ReplyToCommand(client, output);
+	return Plugin_Handled;
 }
 
 /**
@@ -334,24 +402,26 @@ public Config_End(Handle:parser, bool:halted, bool:failed) {
  *
  */
 public Action:PlayerCommandHandler(client, args) {
+#if defined DEBUG
+	PrintToServer("%s PlayerCommandHandler / args=%d", PLUGIN_LOGPREFIX, args);
+#endif	
 	new commandType = 0;
 	// determine command
 	decl String:strTarget[MAX_NAME_LENGTH];
 	GetCmdArg(0, strTarget, sizeof(strTarget));
 	if (strcmp(strTarget, COMMAND_TAKEDAMAGE, false) == 0) {
-		commandType = 1;	// define take damage
-		if (args != 2) {
+		commandType = COMMANDTYPE_TAKEDAMAGE;	// define take damage
+		if (args > 2 || args == 0) {
 			ReplyToCommand(client, "%t", "CommandReplyTakeDamage", strTarget, strTarget);
 			return Plugin_Handled;
 		}
 	} else {
-		commandType = 0;	// define make damage
-		if (args != 2) {
+		commandType = COMMANDTYPE_MAKEDAMAGE;	// define make damage
+		if (args > 2 || args == 0) {
 			ReplyToCommand(client, "%t", "CommandReplyMakeDamage", strTarget, strTarget);
 			return Plugin_Handled;
 		}
 	}
-	
 	GetCmdArg(1, strTarget, sizeof(strTarget));
 	
 	new String:targetName[MAX_TARGET_LENGTH];
@@ -370,21 +440,35 @@ public Action:PlayerCommandHandler(client, args) {
 		ReplyToTargetError(client, targetCount);
 	} else {
 		decl String:param2[MAX_TARGET_LENGTH];
-		GetCmdArg(2, param2, sizeof(param2));
 		new Float:damageFactor;
-		damageFactor = StringToFloat(param2);
+		if (args == 2) {
+			GetCmdArg(2, param2, sizeof(param2));
+			damageFactor = StringToFloat(param2);
+		}
 		for (new i = 0; i < targetCount; i++) {
 			GetClientName(targetList[i], strTarget, sizeof(strTarget));
 			switch (commandType) {
-				case 1: {
+				case COMMANDTYPE_TAKEDAMAGE: {
 					// COMMAND_TAKEDAMAGE
-					g_PlayerTakeDamageMultiplier[targetList[i]] = damageFactor;
-					ReplyToCommand(client, "%t", "CommandReplyTakeDamageSet", strTarget, damageFactor);
+					if (args == 1) {
+						// Print out current value
+						ReplyToCommand(client, "%t", "CommandReplyTakeDamageShow", strTarget, g_PlayerTakeDamageMultiplier[targetList[i]]);						
+					} else {
+						// Set new value
+						g_PlayerTakeDamageMultiplier[targetList[i]] = damageFactor;
+						ReplyToCommand(client, "%t", "CommandReplyTakeDamageSet", strTarget, damageFactor);
+					}
 				}
 				default: {
 					// COMMAND_MAKEDAMAGE
-					g_PlayerMakeDamageMultiplier[targetList[i]] = damageFactor;
-					ReplyToCommand(client, "%t", "CommandReplyMakeDamageSet", strTarget, damageFactor);
+					if (args == 1) {
+						// Print out current value
+						ReplyToCommand(client, "%t", "CommandReplyMakeDamageShow", strTarget, g_PlayerMakeDamageMultiplier[targetList[i]]);						
+					} else {
+						// Set new value
+						g_PlayerMakeDamageMultiplier[targetList[i]] = damageFactor;
+						ReplyToCommand(client, "%t", "CommandReplyMakeDamageSet", strTarget, damageFactor);
+					}
 				}
 			}
 		}
@@ -404,16 +488,16 @@ public Action:PlayerCommandHandler(client, args) {
  * @param makeDamage			will be set (default: 1.0) 
  * @return
  */
-GetFactorsToSteamID(const String:steamID[], Float:damageFactors[]) {
+GetFactorsToSteamID(const String:steamID[], float &takeDamageFactor, float &makeDamageFactor) {
 	new String:thisSteamID[STEAMID_LENGTH];
 	new max = GetArraySize(g_ConfigPlayerSteamID);
-	damageFactors[0] = g_defaultTakeDamage;
-	damageFactors[1] = g_defaultMakeDamage;
+	takeDamageFactor = g_defaultTakeDamage;
+	makeDamageFactor = g_defaultMakeDamage;
 	for (new i = 0; i < max; i++) {
 		GetArrayString(g_ConfigPlayerSteamID, i, thisSteamID, sizeof(thisSteamID));
 		if ((strcmp(thisSteamID, steamID, false) == 0)) {
-			damageFactors[0] = Float:GetArrayCell(g_ConfigPlayerTakeDamage, i);
-			damageFactors[1] = Float:GetArrayCell(g_ConfigPlayerMakeDamage, i);
+			takeDamageFactor = Float:GetArrayCell(g_ConfigPlayerTakeDamage, i);
+			makeDamageFactor = Float:GetArrayCell(g_ConfigPlayerMakeDamage, i);
 			break;
 		}
 	}
@@ -448,4 +532,17 @@ void ResetPlayer(const client) {
 		g_PlayerMakeDamageMultiplier[client] = g_defaultMakeDamage;
 		g_PlayerTakeDamageMultiplier[client] = g_defaultTakeDamage;
 	}
+}
+
+/**
+ * Calculates the printed length of a string - multibyte-safe!
+ *
+ */
+stock StrLenMB(const String:str[])
+{
+	new len = strlen(str);
+	new count;
+	for(new i; i < len; i++)
+		count += ((str[i] & 0xc0) != 0x80) ? 1 : 0;
+	return count;
 }

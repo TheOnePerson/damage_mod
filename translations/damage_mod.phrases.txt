@@ -14,13 +14,23 @@
 	}
 	"CommandReplyTakeDamageSet"
 	{
-		"en"		"Take damage multiplier of '%s' successfully set to %f."
-		"de"		"Schadens-Multiplikator für '%s' wurde erfolgreich auf %f gesetzt."
+		"en"		"Take damage multiplier of '%s' successfully set to %.4f."
+		"de"		"Schadens-Multiplikator für '%s' wurde erfolgreich auf %.4f gesetzt."
 	}
 	"CommandReplyMakeDamageSet"
 	{
-		"en"		"Make damage multiplier of '%s' successfully set to %f."
-		"de"		"Angriffs-Multiplikator für '%s' wurde erfolgreich auf %f gesetzt."
+		"en"		"Make damage multiplier of '%s' successfully set to %.4f."
+		"de"		"Angriffs-Multiplikator für '%s' wurde erfolgreich auf %.4f gesetzt."
+	}
+	"CommandReplyTakeDamageShow"
+	{
+		"en"		"Take damage multiplier of '%s': %.4f"
+		"de"		"Schadens-Multiplikator für '%s': %.4f"
+	}
+	"CommandReplyMakeDamageShow"
+	{
+		"en"		"Make damage multiplier of '%s': %.4f"
+		"de"		"Angriffs-Multiplikator für '%s': %.4f"
 	}
 	"CVarMessageEnabled"
 	{
