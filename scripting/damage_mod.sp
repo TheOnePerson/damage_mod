@@ -33,7 +33,7 @@
 */
 
 /**
- * TODO: Implement a command for reloading the config file (maybe, some tine...) and/or a status command
+ * TODO: Implement a command for reloading the config file (maybe, some time...)
  */
 
 // Uncomment the line below to get a whole bunch of PrintToServer debug messages...
@@ -48,7 +48,7 @@
 #include <adt_trie>
 
 #define PLUGIN_NAME 		"Damage Modification"
-#define PLUGIN_VERSION 		"0.2.0"
+#define PLUGIN_VERSION 		"0.2.1"
 #define PLUGIN_AUTHOR 		"almostagreatcoder"
 #define PLUGIN_DESCRIPTION 	"Enables modification of damage points for players"
 #define PLUGIN_URL 			"https://forums.alliedmods.net/showthread.php?t=305408"
@@ -173,7 +173,7 @@ public CVar_EnabledChanged(Handle:cvar, const String:oldval[], const String:newv
  * Handler for connecting clients
  */
 public void OnClientPostAdminCheck(client) {
-	if (client <= MaxClients && !IsFakeClient(client)) {
+	if (client <= MaxClients && !IsFakeClient(client) && IsClientConnected(client)) {
 		ResetPlayer(client);
 		decl String:steamID[STEAMID_LENGTH];
 		float takeDamageFactor;
