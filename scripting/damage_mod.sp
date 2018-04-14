@@ -23,7 +23,9 @@
 	You can set default damage reduction (or increasement) for players there.
 
 	CVars:
-		-
+		sm_damage_version	// This plugin's version
+		sm_damage_enabled	// Enable/disable this plugin (default 1)
+		sm_damage_keep_it 	// Enable/disable restoring of damage factors on reconnect of a player (default 0)
 	
 	Commands:
 		sm_takedamage		// modify the receiving damage factor for any target
@@ -42,13 +44,14 @@
 #pragma semicolon 1
 
 #include <sourcemod>
+#include <regex>
 #include <sdktools>
 #include <sdkhooks>
 #include <clientprefs>
 #include <adt_trie>
 
 #define PLUGIN_NAME 		"Damage Modification"
-#define PLUGIN_VERSION 		"0.2.1"
+#define PLUGIN_VERSION 		"0.3.0"
 #define PLUGIN_AUTHOR 		"almostagreatcoder"
 #define PLUGIN_DESCRIPTION 	"Enables modification of damage points for players"
 #define PLUGIN_URL 			"https://forums.alliedmods.net/showthread.php?t=305408"
@@ -58,6 +61,9 @@
 #define TRANSLATIONS_FILENAME "damage_mod.phrases"
 #define CHAT_COLORTAG1 		"\x0794D8E9"
 #define CHAT_COLORTAG_NORM 	"\x01"
+#define MAX_COOKIE_LENGTH 511
+#define COOKIE_REGEX 		"^(\\d+?)|(\\d+?)$"	// this is used for parsing the client's cookie
+#define COOKIE_PRECISION 1000.0
 
 #define PLUGIN_LOGPREFIX 	"[Damage] "
 
@@ -71,6 +77,7 @@
 
 #define CVAR_VERSION "sm_damage_version"
 #define CVAR_ENABLED "sm_damage_enabled"
+#define CVAR_KEEPIT "sm_damage_keepit"
 
 // Plugin definitions
 public Plugin:myinfo = 
@@ -83,7 +90,12 @@ public Plugin:myinfo =
 };
 
 // cvar handles
-new Handle:g_CvarEnabled = INVALID_HANDLE;
+ConVar g_CvarEnabled;
+ConVar g_CvarKeepIt;
+
+// cookie handle
+new Handle:g_Cookie;
+new Handle:g_CookieRegex;
 
 // global dynamic arrays
 new Handle:g_ConfigPlayerSteamID = INVALID_HANDLE;		// array for steam ids of players in config file
@@ -103,6 +115,7 @@ new Float:g_currentPlayerConfigMakeDamage;
 new String:g_currentPlayerConfigSteamID[STEAMID_LENGTH];
 
 new bool:g_Enabled = true;
+new bool:g_KeepIt = false;
 new Float:g_defaultTakeDamage;
 new Float:g_defaultMakeDamage;
 
@@ -122,6 +135,7 @@ public OnPluginStart() {
 	
 	CreateConVar(CVAR_VERSION, PLUGIN_VERSION, "Damage Modification version", FCVAR_NOTIFY | FCVAR_REPLICATED | FCVAR_DONTRECORD | FCVAR_SPONLY);
 	g_CvarEnabled = CreateConVar(CVAR_ENABLED, "1", "1 enables the Damage Modification plugin, 0 disables it.", FCVAR_NONE, true, 0.0, true, 1.0);
+	g_CvarKeepIt = CreateConVar(CVAR_KEEPIT, "0", "Damage Modification plugin: 1 = restore damage factors on reconnecting players. 0 = each player starts with default settings.", FCVAR_NONE, true, 0.0, true, 1.0);
 	
 	RegAdminCmd(COMMAND_TAKEDAMAGE, PlayerCommandHandler, ADMFLAG_SLAY, "Damage Modification: modify the damage points a player takes");
 	RegAdminCmd(COMMAND_MAKEDAMAGE, PlayerCommandHandler, ADMFLAG_SLAY, "Damage Modification: modify the damage points a player inflicts to others");
@@ -130,9 +144,17 @@ public OnPluginStart() {
 	g_defaultTakeDamage = 1.0;
 	g_defaultMakeDamage = 1.0;
 	
+	g_Cookie = RegClientCookie("DamageModCookie", "Cookie for the Damage Modification plugin", CookieAccess_Private);
+	g_CookieRegex = CompileRegex(COOKIE_REGEX, PCRE_CASELESS & PCRE_DOTALL);
+	
 	// Hook cvar changes
 	HookConVarChange(g_CvarEnabled, CVar_EnabledChanged);
+	HookConVarChange(g_CvarKeepIt, CVar_KeepItChanged);
 	AutoExecConfig();
+	
+	// Read ConVars values (is this necessary here?)
+	g_KeepIt = g_CvarKeepIt.BoolValue;
+	g_Enabled = g_CvarEnabled.BoolValue;
 	
 	// Hook events
 	HookEvent( "player_activate", Event_PlayerActivate);
@@ -142,6 +164,8 @@ public OnPluginStart() {
 public OnPluginEnd() {
 	// clear the stuff read from config file
 	ResetConfigArray();
+	// Close handles
+	CloseHandle(g_CookieRegex);
 }
 
 public void OnConfigsExecuted() {
@@ -161,10 +185,22 @@ public CVar_EnabledChanged(Handle:cvar, const String:oldval[], const String:newv
 	decl String:tag[50];
 	if (strcmp(newval, "0") == 0) {
 		g_Enabled = false;
-		strcopy(tag, sizeof(tag), "CVarMessageEnabled");
+		strcopy(tag, sizeof(tag), "CVarMessageDisabled");
 	} else {
 		g_Enabled = true;
-		strcopy(tag, sizeof(tag), "CVarMessageDisabled");
+		strcopy(tag, sizeof(tag), "CVarMessageEnabled");
+	}
+	PrintToChatAll("%s%t%s%t", CHAT_COLORTAG1, "ChatPrefix", CHAT_COLORTAG_NORM, tag);
+}
+
+public CVar_KeepItChanged(Handle:cvar, const String:oldval[], const String:newval[]) {
+	decl String:tag[50];
+	if (strcmp(newval, "0") == 0) {
+		g_KeepIt = false;
+		strcopy(tag, sizeof(tag), "CVarMessageKeepingDisabled");
+	} else {
+		g_KeepIt = true;
+		strcopy(tag, sizeof(tag), "CVarMessageKeepingEnabled");
 	}
 	PrintToChatAll("%s%t%s%t", CHAT_COLORTAG1, "ChatPrefix", CHAT_COLORTAG_NORM, tag);
 }
@@ -173,7 +209,7 @@ public CVar_EnabledChanged(Handle:cvar, const String:oldval[], const String:newv
  * Handler for connecting clients
  */
 public void OnClientPostAdminCheck(client) {
-	if (client <= MaxClients && !IsFakeClient(client) && IsClientConnected(client)) {
+	if (client <= MaxClients && !IsFakeClient(client) && IsValidEntity(client)) {
 		ResetPlayer(client);
 		decl String:steamID[STEAMID_LENGTH];
 		float takeDamageFactor;
@@ -182,6 +218,8 @@ public void OnClientPostAdminCheck(client) {
 		GetFactorsToSteamID(steamID, takeDamageFactor, makeDamageFactor); 
 		g_PlayerTakeDamageMultiplier[client] = takeDamageFactor;
 		g_PlayerMakeDamageMultiplier[client] = makeDamageFactor;
+		if (g_KeepIt && AreClientCookiesCached(client))
+			ReadClientCookie(client);
 		SDKHook(client, SDKHook_OnTakeDamage, OnPlayerTakeDamage);
 #if defined DEBUG
 		PrintToServer("%sConnecting client id %d: take_damage:%f, make_damage: %f", PLUGIN_LOGPREFIX, client, g_PlayerTakeDamageMultiplier[client], g_PlayerMakeDamageMultiplier[client]); // DEBUG
@@ -194,9 +232,21 @@ public void OnClientPostAdminCheck(client) {
  */
 public void OnClientDisconnect(client) {
 	if (client <= MaxClients) {
+		WriteClientCookie(client);
 		ResetPlayer(client);
 		SDKUnhook(client, SDKHook_OnTakeDamage, OnPlayerTakeDamage);
 	}
+}
+
+/**
+ * Handler OnClientCookiesCached. Restores client's damage factors, if needed. 
+ * 
+ * @param client 	client id
+ * @noreturn
+ */
+public OnClientCookiesCached(client) {
+	if (g_KeepIt && g_Cookie != INVALID_HANDLE)
+		ReadClientCookie(client);
 }
 
 /**
@@ -207,7 +257,7 @@ public Event_PlayerActivate(Event event, const String:eventName[], bool:dontBroa
 	new client = GetClientOfUserId(event.GetInt("userid"));
 	if (0 < client <= MaxClients && IsClientInGame(client)) {
 #if defined DEBUG
-		PrintToServer("%s*** Event_PlayerActivate *** / client=%d", PLUGIN_LOGPREFIX, client);
+		PrintToServer("%s*** Event_PlayerActivate *** / client=%d / keepIt=%d", PLUGIN_LOGPREFIX, client, g_KeepIt);
 #endif		
 		SDKHook(client, SDKHook_OnTakeDamage, OnPlayerTakeDamage);
 	}
@@ -392,6 +442,62 @@ public Config_End(Handle:parser, bool:halted, bool:failed) {
 		LogError("Configuration parsing stopped!");
 	if (failed)
 		LogError("Configuration parsing failed!");
+}
+
+/**
+ * Writes the client cookie containing the current damage factors.
+ * 
+ * @param client 	client id
+ * @noreturn
+ *
+ */
+WriteClientCookie(const client) {
+	new String:cookieString[MAX_COOKIE_LENGTH];
+	if (client > 0 && !IsFakeClient(client)) {
+		Format(cookieString, sizeof(cookieString), "%d|%d", 
+			RoundFloat(FloatMul(g_PlayerMakeDamageMultiplier[client], COOKIE_PRECISION)),
+			RoundFloat(FloatMul(g_PlayerTakeDamageMultiplier[client], COOKIE_PRECISION)));
+		SetClientCookie(client, g_Cookie, cookieString);
+#if defined DEBUG		
+		PrintToServer("%s Writing client cookie: %s (Floats: %f|%f / Mult: %f)", PLUGIN_LOGPREFIX, cookieString, g_PlayerMakeDamageMultiplier[client], g_PlayerTakeDamageMultiplier[client], COOKIE_PRECISION); // DEBUG
+#endif
+	}
+}
+
+/**
+ * Reads the client cookie containing the damage factors.
+ * 
+ * @param client 	client id
+ * @return			true on success, false otherwise
+ *
+ */
+bool ReadClientCookie(const client) {
+#if defined DEBUG		
+	PrintToServer("%s *** DEBUG: ReadClientCookie ***", PLUGIN_LOGPREFIX); // DEBUG
+#endif
+	bool result = false;
+	if (client > 0 && !IsFakeClient(client)) {
+		decl String:cookieString[MAX_COOKIE_LENGTH];
+		GetClientCookie(client, g_Cookie, cookieString, sizeof(cookieString));
+#if defined DEBUG		
+		PrintToServer("%s Reading client cookie: %s", PLUGIN_LOGPREFIX, cookieString); // DEBUG
+#endif
+		if (MatchRegex(g_CookieRegex, cookieString) == 2) {
+			new String:factors[2][20];
+			ExplodeString(cookieString, "|", factors, 2, 20);
+			g_PlayerMakeDamageMultiplier[client] = StringToFloat(factors[0]);
+			g_PlayerMakeDamageMultiplier[client] = FloatDiv(g_PlayerMakeDamageMultiplier[client], COOKIE_PRECISION);
+			g_PlayerTakeDamageMultiplier[client] = StringToFloat(factors[1]);
+			g_PlayerTakeDamageMultiplier[client] = FloatDiv(g_PlayerTakeDamageMultiplier[client], COOKIE_PRECISION);
+#if defined DEBUG		
+			PrintToServer("%s Client #%d factors set to: %f / %f", PLUGIN_LOGPREFIX, client, g_PlayerMakeDamageMultiplier[client], g_PlayerTakeDamageMultiplier[client]); // DEBUG
+#endif
+			result = true;
+		}
+		if (!result && cookieString[0] != '\0')
+			LogMessage("%L: Invalid cookie content '%s'. Cannot restore damage factors.", client, cookieString);
+	}
+	return result;
 }
 
 /**

@@ -42,6 +42,16 @@
 		"en"		"Damage modification disabled."
 		"de"		"Schadens- und Angriffs-Multiplikator deaktiviert."
 	}
+	"CVarMessageKeepingEnabled"
+	{
+		"en"		"Restoring of damage factors on reconnect enabled."
+		"de"		"Schadens- und Angriffs-Multiplikatoren werden bei Wiederverbindung wiederhergestellt."
+	}
+	"CVarMessageKeepingDisabled"
+	{
+		"en"		"Restoring of damage factors on reconnect disabled."
+		"de"		"Schadens- und Angriffs-Multiplikatoren werden bei Wiederverbindung zurückgesetzt."
+	}
 	"ConfigReloaded"
 	{
 		"en"		"Config successfully reloaded."
